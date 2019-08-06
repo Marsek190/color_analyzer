@@ -22,6 +22,150 @@ scope: globals(), locals(), __dict__, ...
 def compact(scope, *keys):
     return dict((k, scope[k]) for k in keys)
 
+class Hungarian:
+
+    SIMPLE = 0
+    STARRED = 1
+    PRIMED = 2
+    
+    def __init__(self):
+        pass
+        
+    def maximize(self, cost_matrix):
+        matrix = copy.deepcopy(cost_matrix)
+        m = max(max(row) for row in matrix)
+        for row in matrix:
+            row[:] = list(map(lambda x: m - x, row))
+    
+        return self.minimize(matrix)
+    
+    
+    def minimize(self, cost_matrix):        
+        matrix = copy.deepcopy(cost_matrix)          
+        n = len(matrix)
+
+        for row in matrix:
+            m = min(row)
+            if m != 0:
+                row[:] = list(map(lambda x: x - m, row))
+    
+        mask_matrix = [[self.SIMPLE] * n for _ in matrix]
+        row_cover = [False] * n
+        col_cover = [False] * n
+
+        for r, row in enumerate(matrix):
+            for c, value in enumerate(row):
+                if value == 0 and not row_cover[r] and not col_cover[c]:
+                    mask_matrix[r][c] = self.STARRED
+                    row_cover[r] = True
+                    col_cover[c] = True
+    
+        row_cover = [False] * n
+        col_cover = [False] * n
+
+        match_found = False
+    
+        while not match_found:
+            for i in range(n):
+                col_cover[i] = any(mrow[i] == self.STARRED for mrow in mask_matrix)
+    
+            if all(col_cover):
+                match_found = True
+                continue
+            else:
+                zero = self._cover_zeroes(matrix, mask_matrix, row_cover, col_cover)
+
+                primes = [zero]
+                stars = []
+                while zero:
+                    zero = self._find_star_in_col(mask_matrix, zero[1])
+                    if zero:
+                        stars.append(zero)
+                        zero = self._find_prime_in_row(mask_matrix, zero[0])
+                        stars.append(zero)
+
+                for star in stars:
+                    mask_matrix[star[0]][star[1]] = self.SIMPLE
+    
+                # отмечаем звездочкой
+                for prime in primes:
+                    mask_matrix[prime[0]][prime[1]] = self.STARRED
+    
+                # убираем отмеченные звездой элементы
+                for r, row in enumerate(mask_matrix):
+                    for c, val in enumerate(row):
+                        if val == self.PRIMED:
+                            mask_matrix[r][c] = self.SIMPLE
+    
+                row_cover = [False] * n
+                col_cover = [False] * n
+
+        solution = []
+        for r, row in enumerate(mask_matrix):
+            for c, val in enumerate(row):
+                if val == self.STARRED:
+                    solution.append((r, c))
+        total_cost = self._sum_cost(solution, cost_matrix)    
+        return total_cost, matrix
+  
+    def _cover_zeroes(self, matrix, mask_matrix, row_cover, col_cover):
+        while True:
+            zero = True
+            while zero:
+                zero = self._find_noncovered_zero(matrix, row_cover, col_cover)
+                if not zero:
+                    break
+                else:
+                    row = mask_matrix[zero[0]]
+                    row[zero[1]] = self.PRIMED
+    
+                    try:
+                        index = row.index(self.STARRED)
+                    except ValueError:
+                        return zero
+  
+                    row_cover[zero[0]] = True
+                    col_cover[index] = False
+
+            m = min(self._uncovered_values(matrix, row_cover, col_cover))
+            for r, row in enumerate(matrix):
+                for c, __ in enumerate(row):
+                    if row_cover[r]:
+                        matrix[r][c] += m
+                    if not col_cover[c]:
+                        matrix[r][c] -= m
+    def _find_noncovered_zero(self, matrix, row_cover, col_cover):
+        for r, row in enumerate(matrix):
+            for c, value in enumerate(row):
+                if value == 0 and not row_cover[r] and not col_cover[c]:
+                    return (r, c)
+        else:
+            return None
+
+    def _uncovered_values(self, matrix, row_cover, col_cover):
+        for r, row in enumerate(matrix):
+            for c, value in enumerate(row):
+                if not row_cover[r] and not col_cover[c]:
+                    yield value
+    
+    
+    def _find_star_in_col(self, mask_matrix, c):
+        for r, row in enumerate(mask_matrix):
+            if row[c] == self.STARRED:
+                return (r, c)
+        else:
+            return None
+    
+    def _find_prime_in_row(self, mask_matrix, r):
+        for c, val in enumerate(mask_matrix[r]):
+            if val == self.PRIMED:
+                return (r, c)
+        else:
+            return None
+        
+    def _sum_cost(self, results, cost_matrix):
+        return sum([cost_matrix[r][c] for r, c in results])
+
 class Task:
     VISITED = -1
     INCORRECT = float('inf')
