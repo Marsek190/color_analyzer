@@ -38,6 +38,81 @@ class NormalUniform(st.rv_continuous):
         D = 10 / np.log10(np.e)
         return np.sqrt(2 * np.pi * D * x * self._sigma) * np.exp(-(10 * np.log10(x) - 10 * np.log10(self._mean)) ** 2 / 2 * self._sigma ** 2)
 
+class Channel:
+    def __init__(self, n, power, total, rho, sigma, h_need):
+        # выбираем по n элеметов
+        self.n = n
+        self.power = power
+        # размер вектор 1 х total
+        self.total = total
+        self.rho = rho
+        self.noise = sigma
+        self.h_need = h_need
+        self.vector = self._normal_dist()
+    
+    def _normal_dist(self):
+        mu, sigma = 0, 0.1 # mean and standard deviation    
+        n = self.total
+        s = np.random.normal(mu, sigma, n)
+        return s
+    
+    def _logonormal_dist(self):
+        mean = np.mean(self.vector)
+        norm = NormalUniform(sigma=self.noise,a_mean=mean)        
+        mu, sigma = 0., 0.1
+        logonormal = lambda x: np.random.lognormal(mu, sigma)
+        a = list(map(logonormal, range(self.n)))
+        mean, std = np.mean(a), np.std(a)
+        normal_dist = np.array(norm.pdf(a, mean, std))
+        return normal_dist       
+    
+    def _quality_param_in_line(self, line):
+        return 1 - reduce(operator.mul, line)
+
+    def execute(self):
+        p, q = 0, 0
+        # смещение
+        offset = 0
+        # максимально возможное число статистических испытаний
+        k0 = self.total // self.n
+        # надежность связи в линии
+        rho_rel, rho_rel_active = 0, 0
+        m_tr_i = []
+        reliability = []
+        for k in range(k0):          
+            m_tr_i_total = 0
+            for i in range(1, self.n+1):
+                rho_j = self.h_need / self.vector[offset+i]
+                d_rho = self.rho / self.power
+                m_tr_j = 1 + np.ceil(rho_j / d_rho)   
+                if m_tr_j <= self.power / self.n:
+                    q += 1
+                m_tr_i.append(m_tr_j)
+                if i == self.n:
+                    m_tr_i_total = sum(m_tr_i)
+                    n = 0
+                    while m_tr_i_total > self.power:                        
+                        n += 1
+                        m_tr_i_total = sum(m_tr_i[:len(m_tr_i)-n])                        
+                    p += self.n - n
+            if k < k0-1:
+                m_tr_i.clear()
+            offset += self.n-1
+            rho_rel = q / self.total
+            rho_rel_active = p / self.total
+            reliability.append((rho_rel, rho_rel_active))
+        rho_r = list(map(lambda x: x[0], reliability))
+        rho_a = list(map(lambda x: x[1], reliability))
+        print(f'M: {self.power}мкВт, ρб/у: {rho_rel}, ρупр.: {rho_rel_active}')
+        """ ploting """
+        plt.grid(True)
+        plt.plot(rho_a, rho_r, color='blue', label='по 3 точкам')
+        plt.axis([0., 1., 0., 1.])
+        plt.xlabel('t', fontsize=16)
+        plt.ylabel('y', fontsize=16)
+        plt.legend(bbox_to_anchor=(1., 1.))
+        plt.show()     
+      
 '''
 реализация венгерского алгоритма
 '''
