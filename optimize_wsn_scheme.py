@@ -10,6 +10,7 @@ import numpy as np
 import copy
 import sys
 import itertools
+import scipy.stats as st
 from functools import reduce
 import operator
  
@@ -22,6 +23,24 @@ scope: globals(), locals(), __dict__, ...
 def compact(scope, *keys):
     return dict((k, scope[k]) for k in keys)
 
+''''
+normal dist class
+extends at st.rv_continuous
+'''
+class NormalUniform(st.rv_continuous):
+    def __init__(self, *args,  **kwargs):
+        self._sigma = kwargs["sigma"]
+        self._mean = kwargs["mean"]
+        kwargs.clear()
+        return super(NormalUniform, self).__init__(*args, **kwargs)
+    
+    def _pdf(self, x):
+        D = 10 / np.log10(np.e)
+        return np.sqrt(2 * np.pi * D * x * self._sigma) * np.exp(-(10 * np.log10(x) - 10 * np.log10(self._mean)) ** 2 / 2 * self._sigma ** 2)
+
+'''
+реализация венгерского алгоритма
+'''
 class Hungarian:
 
     SIMPLE = 0
@@ -342,6 +361,26 @@ class Task:
             tree.append(tail)  
             # увеличиваем уровень вложенности
             counter += 1
+            
+    def pad_matrix(matrix, pad_value=0):
+        rows, cols = len(matrix), len(matrix[0])
+        if rows == cols:
+            return matrix
+        
+        new_matrix = []
+        for r in matrix:
+            tmp = []
+            for c in r:
+                tmp.append(c)
+            new_matrix.append(tmp)
+        
+        if (rows > cols):
+            for i in range(rows):
+                new_matrix[i] += [pad_value] * (rows - cols)                
+        else:
+            while cols != len(new_matrix):
+                new_matrix += [[pad_value] * cols]
+        return new_matrix
                 
 class OptRelWSN:
 
@@ -350,6 +389,9 @@ class OptRelWSN:
     	[0.45, 0.53, 0.41, 0.47, 0.11],
     	[0.08, 0.14, 0.18, 0.63, 0.32]
     ])    
+    
+    # параметр уровня шума в канале связи
+    noice = 5.0
     
     '''
     r - число строк
@@ -362,6 +404,14 @@ class OptRelWSN:
         self.m = c
         self.Q = self._Q
         self.C = self._init_opt()
+        
+    def _logonormal_dist(self):
+        scale = self.r * self.c
+        mu, sigma = 0, 0.1 # mean and standard deviation
+        lognorm_dist = np.random.lognormal(mean=0, sigma=self.noise, size=scale)
+        matr = np.array(lognorm_dist.reshape(self.r, self.c))
+        print(matr)
+        return matr 
         
     """программа оптимального закрепления каналов связи за сенсорными узлами"""
     def _init_rel_wsn(self):        
@@ -447,7 +497,6 @@ class OptRelWSN:
         """Выполняем разбор дерева"""
         res_tree_exec, matr_exec = task.execute()        
         min_rel_qual = 1 - reduce(operator.mul, [self.Q[line][j] for j in range(self.m) if matr_exec[line][j] == 1])
-
         print(f'Гарантированная надежность связи: {min_rel_qual}\n')
         print(f'Оптимальное распределение частот: {res_tree_exec}\n{matr_exec}')
 
